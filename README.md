@@ -7,8 +7,9 @@ Record a sound (laptop mic or audio file) and find out:
 - **The data behind it:** frequency-over-time graphs, a spectrogram, and CSV files with
   time → frequency data and measurements for every sound.
 
-**Try it online:** see the website link at the top of this page (hosted free on Render; the first
-visit after a quiet period takes about a minute to wake up).
+## 🌐 Try it online: **https://bird-sound-id.onrender.com**
+
+(Hosted free on Render. The first visit after a quiet period takes about a minute to wake up.)
 
 You can also run it on your own laptop, as a **website** or a **Terminal menu**.
 
