@@ -1,0 +1,12 @@
+numpy
+scipy
+matplotlib
+sounddevice
+flask
+# BirdNET (neural-network species ID)
+birdnetlib
+tensorflow
+librosa
+resampy
+audioread
+audioop-lts; python_version >= "3.13"

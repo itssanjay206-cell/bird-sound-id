@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bird Sound ID</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐦</text></svg>">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #f0efea;
+  --border: #e2e0d8;
+  --text: #1f1f1d;
+  --text-2: #5c5b55;
+  --muted: #8a8983;
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --rec: #d64545;
+  --grid: #e9e7e0;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300;
+  --nonbird: #9a9992;
+  --good: #1b8a5a; --warn: #b7791f; --bad: #c0392b;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --surface-2: #222220; --border: #2e2e2b;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86; --accent: #3987e5;
+    --grid: #2a2a27;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2a9a2a;
+    --nonbird: #6f6e68; --good: #3fbf86; --warn: #e0a43a; --bad: #e46a5c;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --surface-2: #222220; --border: #2e2e2b;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86; --accent: #3987e5;
+  --grid: #2a2a27;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2a9a2a;
+  --nonbird: #6f6e68; --good: #3fbf86; --warn: #e0a43a; --bad: #e46a5c;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+header {
+  display: flex; align-items: center; gap: 12px; padding: 18px 24px;
+  border-bottom: 1px solid var(--border); background: var(--surface);
+}
+header h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+header .logo { font-size: 22px; }
+.status { margin-left: auto; font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.dot.ok { background: var(--good); }
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+}
+main {
+  max-width: 1240px; margin: 0 auto; padding: 24px;
+  display: grid; grid-template-columns: 380px 1fr; gap: 24px; align-items: start;
+}
+@media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px; box-shadow: var(--shadow);
+}
+.card + .card { margin-top: 16px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 14px; font-weight: 600; }
+.tabs { display: flex; background: var(--surface-2); border-radius: 10px; padding: 3px; margin-bottom: 18px; }
+.tabs button {
+  flex: 1; border: 0; background: transparent; color: var(--text-2); padding: 8px; border-radius: 8px;
+  font: inherit; font-weight: 500; cursor: pointer;
+}
+.tabs button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.chip.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.rec-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; margin: 22px 0 14px; }
+.rec-btn {
+  width: 108px; height: 108px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--rec); color: #fff; font: 600 15px/1.2 inherit; font-family: inherit;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--rec) 18%, transparent);
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+.rec-btn:hover { transform: scale(1.03); }
+.rec-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.rec-btn.recording { animation: pulse 1.4s ease-in-out infinite; border-radius: 28px; }
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--rec) 25%, transparent); }
+  50% { box-shadow: 0 0 0 16px color-mix(in srgb, var(--rec) 8%, transparent); }
+}
+.timer { font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+.hint { color: var(--muted); font-size: 13px; text-align: center; }
+canvas.live { width: 100%; height: 110px; border-radius: 10px; background: #0d0d10; display: block; }
+.drop {
+  border: 2px dashed var(--border); border-radius: 12px; padding: 34px 16px; text-align: center;
+  color: var(--text-2); cursor: pointer; transition: border-color .15s, background .15s;
+}
+.drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.drop strong { color: var(--text); display: block; margin-bottom: 4px; }
+label.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--text-2); margin-top: 16px; cursor: pointer; }
+label.check input { margin-top: 3px; accent-color: var(--accent); }
+.history { list-style: none; margin: 0; padding: 0; }
+.history li {
+  display: flex; justify-content: space-between; gap: 10px; padding: 10px 0;
+  border-top: 1px solid var(--border); cursor: pointer; font-size: 14px;
+}
+.history li:first-child { border-top: 0; }
+.history li:hover .h-name { color: var(--accent); }
+.history .h-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.empty { color: var(--muted); font-size: 14px; }
+input[type=search] {
+  width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: inherit;
+}
+.sp-results { margin-top: 10px; max-height: 220px; overflow: auto; font-size: 14px; }
+.sp-results div { padding: 5px 0; border-bottom: 1px solid var(--border); }
+.sp-results i { color: var(--muted); }
+
+/* Results */
+.placeholder { text-align: center; padding: 70px 20px; color: var(--muted); }
+.placeholder .big { font-size: 46px; margin-bottom: 8px; }
+.answer-card { padding: 28px; }
+.answer-label { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.answer-name { font-size: 40px; line-height: 1.1; font-weight: 700; letter-spacing: -.025em; margin: 8px 0 4px; overflow-wrap: anywhere; }
+.answer-sci { font-style: italic; color: var(--text-2); font-size: 16px; }
+.meter-row { display: flex; align-items: center; gap: 14px; margin-top: 22px; flex-wrap: wrap; }
+.meter { flex: 1; min-width: 160px; height: 10px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.meter > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width .6s ease; }
+.pct { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid currentColor; }
+.badge.good { color: var(--good); } .badge.warn { color: var(--warn); } .badge.bad { color: var(--bad); }
+.source-note { margin-top: 12px; color: var(--text-2); font-size: 14px; }
+audio { width: 100%; margin-top: 18px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stat { background: var(--surface-2); border-radius: 12px; padding: 14px; }
+.stat .v { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 13px; color: var(--text-2); }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.tag { background: var(--surface-2); border-radius: 6px; padding: 3px 9px; font-size: 13px; color: var(--text-2); }
+.sp-row { display: grid; grid-template-columns: 1fr 120px 48px; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+.sp-row:first-of-type { border-top: 0; }
+.sp-row .n { font-weight: 600; }
+.sp-row .s { font-size: 13px; color: var(--muted); }
+.sp-row .bar { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.sp-row .bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.sp-row .p { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.chart-wrap { position: relative; }
+svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+svg.chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--text); color: var(--bg);
+  padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.4; white-space: nowrap;
+  opacity: 0; transition: opacity .1s; transform: translate(-50%, calc(-100% - 12px));
+}
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.table-scroll { overflow-x: auto; }
+details summary { cursor: pointer; color: var(--text-2); font-weight: 500; }
+details[open] summary { margin-bottom: 12px; }
+.plot-img { width: 100%; border-radius: 10px; border: 1px solid var(--border); background: #fff; display: block; }
+.downloads { display: flex; flex-wrap: wrap; gap: 8px; }
+.downloads a {
+  text-decoration: none; color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+  padding: 8px 12px; border-radius: 9px; font-size: 14px;
+}
+.downloads a:hover { border-color: var(--accent); color: var(--accent); }
+.loading { text-align: center; padding: 60px 20px; }
+.spinner {
+  width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 16px;
+  border: 3px solid var(--surface-2); border-top-color: var(--accent); animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error { border-color: var(--bad); color: var(--bad); }
+.dot-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">🐦</span>
+  <h1>Bird Sound ID</h1>
+  <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Connecting…</span>
+    <button class="icon-btn" id="themeBtn" title="Toggle light/dark">◐</button></div>
+</header>
+
+<main>
+  <!-- Left column: capture -->
+  <section>
+    <div class="card">
+      <div class="tabs">
+        <button class="active" data-tab="record">🎙 Record</button>
+        <button data-tab="upload">📁 Upload</button>
+      </div>
+
+      <div id="tab-record">
+        <h2>Recording length</h2>
+        <div class="chips" id="durChips">
+          <button class="chip" data-sec="5">5 s</button>
+          <button class="chip active" data-sec="10">10 s</button>
+          <button class="chip" data-sec="15">15 s</button>
+          <button class="chip" data-sec="30">30 s</button>
+          <button class="chip" data-sec="0">Until I stop</button>
+        </div>
+        <div class="rec-wrap">
+          <button class="rec-btn" id="recBtn">Record</button>
+          <div class="timer" id="timer">0:00</div>
+        </div>
+        <canvas class="live" id="live" width="680" height="200"></canvas>
+        <p class="hint">Hold the laptop towards the bird and stay quiet while recording.</p>
+      </div>
+
+      <div id="tab-upload" hidden>
+        <div class="drop" id="drop">
+          <strong>Drop an audio file here</strong>
+          or click to choose (.wav, .mp3, .m4a, …)
+          <input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" hidden>
+        </div>
+      </div>
+
+      <label class="check"><input type="checkbox" id="useLoc">
+        <span>Use my location — BirdNET then only considers birds found in your area.</span></label>
+    </div>
+
+    <div class="card">
+      <h2>This session</h2>
+      <ul class="history" id="history"><li class="empty" style="cursor:default">No recordings yet.</li></ul>
+    </div>
+
+    <div class="card">
+      <h2>Species BirdNET knows</h2>
+      <input type="search" id="spSearch" placeholder="Search e.g. myna, kingfisher, owl">
+      <div class="sp-results" id="spResults"></div>
+    </div>
+  </section>
+
+  <!-- Right column: results -->
+  <section id="results">
+    <div class="card placeholder">
+      <div class="big">🎧</div>
+      <div>Record a sound or upload a file.<br>The answer appears here.</div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let history = [];
+let lastResult = null;
+
+/* ---------- theme ---------- */
+$("#themeBtn").onclick = () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
+  if (lastResult) renderResult(lastResult);
+};
+try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+
+/* ---------- status ---------- */
+async function loadStatus() {
+  try {
+    const r = await fetch("/api/status").then(r => r.json());
+    $("#statusDot").classList.toggle("ok", r.birdnet_species > 0);
+    $("#statusText").textContent = r.birdnet_species
+      ? `BirdNET · ${r.birdnet_species.toLocaleString()} species`
+      : "BirdNET not available – basic mode";
+  } catch (e) {
+    $("#statusText").textContent = "Server not reachable – is web_app.py running?";
+  }
+}
+const SERVER = "http://127.0.0.1:5050";
+if (location.protocol === "file:") {
+  // Opened by double-clicking index.html: the page can't talk to Python from here.
+  // If the server is running, jump to it; otherwise explain how to start it.
+  fetch(SERVER + "/api/status", { mode: "no-cors" })
+    .then(() => { location.href = SERVER; })
+    .catch(() => {
+      $("#statusText").textContent = "Server not running";
+      $("#results").innerHTML = `<div class="card error"><strong>⚠ The Python server isn't running.</strong>
+        <p style="color:var(--text)">This page was opened as a file, so it can't reach the analyzer. Start the server first:</p>
+        <ol style="color:var(--text)">
+          <li>Double-click <b>Start Bird ID.command</b> in your Claude folder<br>
+              <span class="hint">or run <code>python3 ~/Desktop/Claude/web_app.py</code> in Terminal</span></li>
+          <li>The site opens by itself at <a href="${SERVER}">${SERVER}</a> — use that address, not this file.</li>
+        </ol></div>`;
+    });
+} else {
+  loadStatus();
+}
+
+/* ---------- tabs & chips ---------- */
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
+  $("#tab-record").hidden = b.dataset.tab !== "record";
+  $("#tab-upload").hidden = b.dataset.tab !== "upload";
+});
+let recSeconds = 10;
+document.querySelectorAll("#durChips .chip").forEach(c => c.onclick = () => {
+  document.querySelectorAll("#durChips .chip").forEach(x => x.classList.toggle("active", x === c));
+  recSeconds = +c.dataset.sec;
+});
+
+/* ---------- location ---------- */
+let coords = null;
+$("#useLoc").onchange = e => {
+  if (!e.target.checked) { coords = null; return; }
+  navigator.geolocation.getCurrentPosition(
+    p => { coords = { lat: p.coords.latitude, lon: p.coords.longitude }; },
+    () => { e.target.checked = false; alert("Location not available – BirdNET will consider all species."); },
+    { timeout: 10000 });
+};
+
+/* ---------- WAV encoding (so Python always receives a plain .wav) ---------- */
+function audioBufferToWav(buf) {
+  const sr = buf.sampleRate, n = buf.length, ch = buf.numberOfChannels;
+  const mono = new Float32Array(n);
+  for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ch; }
+  const out = new DataView(new ArrayBuffer(44 + n * 2));
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); out.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt ");
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+  out.setUint32(24, sr, true); out.setUint32(28, sr * 2, true); out.setUint16(32, 2, true);
+  out.setUint16(34, 16, true); str(36, "data"); out.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, mono[i])); out.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true); }
+  return new Blob([out], { type: "audio/wav" });
+}
+async function toWav(blob) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  try { return audioBufferToWav(await ctx.decodeAudioData(await blob.arrayBuffer())); }
+  finally { ctx.close(); }
+}
+
+/* ---------- recording ---------- */
+let rec = null;
+const recBtn = $("#recBtn"), timerEl = $("#timer"), live = $("#live"), lctx = live.getContext("2d");
+lctx.fillStyle = "#0d0d10"; lctx.fillRect(0, 0, live.width, live.height);
+
+recBtn.onclick = () => rec ? stopRecording() : startRecording();
+
+async function startRecording() {
+  let stream;
+  try {
+    // Turn OFF voice processing: it treats bird song as noise and removes it
+    stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  } catch (e) {
+    showError(e.name === "NotAllowedError"
+      ? "Microphone blocked. Click the microphone icon in the address bar, choose Allow, then reload the page."
+      : e.name === "NotFoundError" ? "No microphone found."
+      : "Could not start the microphone: " + e.message);
+    return;
+  }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0;
+  src.connect(analyser);
+  const chunks = [];
+  const mr = new MediaRecorder(stream);
+  mr.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const started = performance.now();
+  rec = { stream, ctx, analyser, mr, chunks, started, raf: 0 };
+  mr.onstop = () => finishRecording(chunks, mr.mimeType);
+  mr.start(250);
+  recBtn.classList.add("recording"); recBtn.textContent = "Stop";
+  drawLive();
+}
+
+function drawLive() {
+  if (!rec) return;
+  const { analyser, started } = rec;
+  const bins = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(bins);
+  // scroll left by 2px and paint the newest column (0-12 kHz)
+  const w = live.width, h = live.height;
+  lctx.drawImage(live, -2, 0);
+  const nyq = rec.ctx.sampleRate / 2, maxBin = Math.floor(bins.length * Math.min(1, 12000 / nyq));
+  for (let y = 0; y < h; y++) {
+    const v = bins[Math.floor((1 - y / h) * maxBin)] / 255;
+    lctx.fillStyle = `hsl(${280 - v * 240}, 90%, ${Math.pow(v, 1.6) * 62}%)`;
+    lctx.fillRect(w - 2, y, 2, 1);
+  }
+  const el = (performance.now() - started) / 1000;
+  timerEl.textContent = fmtTime(el);
+  if (recSeconds && el >= recSeconds) { stopRecording(); return; }
+  rec.raf = requestAnimationFrame(drawLive);
+}
+
+function stopRecording() {
+  if (!rec) return;
+  cancelAnimationFrame(rec.raf);
+  rec.mr.stop();
+  rec.stream.getTracks().forEach(t => t.stop());
+  rec.ctx.close();
+  rec = null;
+  recBtn.classList.remove("recording"); recBtn.textContent = "Record";
+}
+
+async function finishRecording(chunks, type) {
+  try {
+    const wav = await toWav(new Blob(chunks, { type }));
+    analyzeBlob(wav, "Recording");
+  } catch (e) { showError("Could not process the recording: " + e.message); }
+}
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+/* ---------- upload ---------- */
+const drop = $("#drop"), fileInput = $("#fileInput");
+drop.onclick = () => fileInput.click();
+fileInput.onchange = () => fileInput.files[0] && handleFile(fileInput.files[0]);
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]));
+async function handleFile(file) {
+  let blob = file;
+  try { blob = await toWav(file); }
+  catch (e) { if (!/\.wav$/i.test(file.name)) { showError("This browser can't read that file type. Try a .wav or .mp3 file."); return; } }
+  analyzeBlob(blob, file.name);
+  fileInput.value = "";
+}
+
+/* ---------- talk to Python ---------- */
+async function analyzeBlob(blob, label) {
+  recBtn.disabled = true;
+  $("#results").innerHTML = `<div class="card loading"><div class="spinner"></div>
+    <div><strong>Listening closely…</strong></div>
+    <div class="hint">Finding sounds, checking if they are birds, and asking BirdNET.</div></div>`;
+  const fd = new FormData();
+  fd.append("audio", blob, "clip.wav");
+  if (coords) { fd.append("lat", coords.lat); fd.append("lon", coords.lon); }
+  try {
+    const r = await fetch("/api/analyze", { method: "POST", body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Analysis failed");
+    data.label = label;
+    data.when = new Date();
+    history.unshift(data);
+    renderHistory();
+    renderResult(data);
+  } catch (e) {
+    showError(e.message.includes("fetch") ? "Can't reach the Python server. Is web_app.py still running?" : e.message);
+  } finally { recBtn.disabled = false; }
+}
+
+function showError(msg) {
+  $("#results").innerHTML = `<div class="card error"><strong>⚠ ${esc(msg)}</strong></div>`;
+}
+
+/* ---------- history ---------- */
+function renderHistory() {
+  const ul = $("#history");
+  ul.innerHTML = history.map((h, i) => `<li data-i="${i}">
+      <span><span class="h-name">${esc(h.answer)}</span>${h.confidence != null ? ` <span class="h-time">${Math.round(h.confidence * 100)}%</span>` : ""}</span>
+      <span class="h-time">${h.when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span></li>`).join("");
+  ul.querySelectorAll("li").forEach(li => li.onclick = () => renderResult(history[+li.dataset.i]));
+}
+
+/* ---------- species search ---------- */
+let spTimer;
+$("#spSearch").oninput = e => {
+  clearTimeout(spTimer);
+  const q = e.target.value.trim();
+  if (q.length < 2) { $("#spResults").innerHTML = ""; return; }
+  spTimer = setTimeout(async () => {
+    const r = await fetch("/api/species?q=" + encodeURIComponent(q)).then(r => r.json());
+    $("#spResults").innerHTML = r.results.map(s => `<div>${esc(s.name)} <i>${esc(s.scientific)}</i></div>`).join("")
+      + `<div class="hint" style="border:0;text-align:left">${r.matches} match${r.matches === 1 ? "" : "es"}${r.matches > 50 ? " (first 50 shown)" : ""}</div>`;
+  }, 200);
+};
+
+/* ---------- results ---------- */
+function level(c) {
+  if (c == null) return null;
+  if (c >= 0.7) return { cls: "good", icon: "✓", text: "Confirmed" };
+  if (c >= 0.4) return { cls: "warn", icon: "?", text: "Possible" };
+  return { cls: "bad", icon: "!", text: "Low confidence" };
+}
+
+function renderResult(d) {
+  lastResult = d;
+  const top = d.species[0];
+  const isBirdNet = d.birdnet_available && top && d.answer === top.name;
+  const sci = isBirdNet ? top.scientific : "";
+  const lv = level(d.confidence);
+  const colorOf = {};
+  d.groups.forEach((g, i) => colorOf[g.name] = css(SERIES[i % SERIES.length]));
+
+  let note = "";
+  if (d.answer.startsWith("NO BIRD")) note = "No bird sounds were found in this clip.";
+  else if (d.answer.includes("UNKNOWN")) note = "Bird-like sounds were found, but no species could be matched. Try recording longer or closer.";
+  else if (isBirdNet) note = `Identified by BirdNET` + (top.times.length ? ` · heard at ${top.times.map(t => `${t[0]}–${t[1]} s`).join(", ")}` : "");
+  else note = esc(d.answer_source);
+  if (d.confidence != null && d.confidence < 0.5) note += " · Low confidence: record again closer to the bird.";
+
+  const rest = d.species.slice(isBirdNet ? 1 : 0);
+  const others = rest.filter(s => s.confidence >= 0.10);   // hide very weak guesses
+  const hidden = rest.length - others.length;
+  const html = `
+  <div class="card answer-card">
+    <div class="answer-label">Final answer</div>
+    <div class="answer-name">${esc(d.answer)}</div>
+    ${sci ? `<div class="answer-sci">${esc(sci)}</div>` : ""}
+    ${lv ? `<div class="meter-row">
+      <div class="pct">${Math.round(d.confidence * 100)}%</div>
+      <div class="meter"><span style="width:${Math.round(d.confidence * 100)}%"></span></div>
+      <span class="badge ${lv.cls}">${lv.icon} ${lv.text}</span></div>` : ""}
+    <div class="source-note">${note}</div>
+    <audio controls src="${d.files.audio}"></audio>
+  </div>
+
+  ${others.length ? `<div class="card"><h2>Also detected</h2>
+    ${others.map(s => `<div class="sp-row">
+      <div><div class="n">${esc(s.name)}</div><div class="s"><i>${esc(s.scientific)}</i> · ${s.times.map(t => `${t[0]}–${t[1]} s`).join(", ")}</div></div>
+      <div class="bar"><span style="width:${Math.round(s.confidence * 100)}%"></span></div>
+      <div class="p">${Math.round(s.confidence * 100)}%</div></div>`).join("")}
+    <p class="hint" style="text-align:left;margin:10px 0 0">Under 40 % = weak guess; treat as unconfirmed.${hidden ? ` ${hidden} guess${hidden > 1 ? "es" : ""} under 10 % hidden.` : ""}</p></div>` : ""}
+
+  <div class="card"><h2>Is it a bird?</h2>
+    <div class="stats">
+      <div class="stat"><div class="v">${d.counts.bird}</div><div class="l">bird sounds</div></div>
+      <div class="stat"><div class="v">${d.counts.maybe}</div><div class="l">maybe bird</div></div>
+      <div class="stat"><div class="v">${d.counts.not_bird}</div><div class="l">not bird</div></div>
+    </div>
+    ${(d.not_bird_sounds.length || d.non_bird_hits.length) ? `<div class="tags">
+      ${d.not_bird_sounds.map(s => `<span class="tag">${esc(s)}</span>`).join("")}
+      ${d.non_bird_hits.map(s => `<span class="tag">${esc(s.name)} (BirdNET ${Math.round(s.confidence * 100)}%)</span>`).join("")}
+    </div>` : ""}
+  </div>
+
+  <div class="card"><h2>Frequency over time</h2>
+    <div class="legend">${d.groups.map(g => `<span><i style="background:${colorOf[g.name]}"></i>${esc(g.name.replace("Bird", "Sound group"))}</span>`).join("")}
+      ${d.contours.some(c => !c.source) ? `<span><i style="background:${css("--nonbird")}"></i>not a bird / unsure</span>` : ""}</div>
+    <div class="chart-wrap" id="chartWrap"></div>
+    <p class="hint" style="text-align:left;margin:8px 0 0">Each line is one sound's pitch; similar sounds share a colour (one bird with a varied song can make several groups). Hover for time and frequency.</p>
+  </div>
+
+  ${d.groups.length ? `<div class="card"><details><summary>Sound measurements (step-by-step parameters)</summary>
+    <div class="table-scroll"><table>
+      <tr><th>Group</th><th class="num">Time (s)</th><th class="num">Notes</th><th class="num">Peak Hz</th><th class="num">Length s</th>
+          <th class="num">Range Hz</th><th>Shape</th><th class="num">Calls/s</th><th class="num">Tonality</th><th>Rule-based guess</th></tr>
+      ${d.groups.map(g => `<tr><td><span class="dot-swatch" style="background:${colorOf[g.name]}"></span>${esc(g.name.replace("Bird", "Group"))}</td>
+        <td class="num">${g.start}–${g.end}</td><td class="num">${g.notes}</td><td class="num">${g.peak_freq}</td>
+        <td class="num">${g.duration}</td><td class="num">${g.bandwidth}</td><td>${esc(g.shape)}</td>
+        <td class="num">${g.rate ?? "–"}</td><td class="num">${g.flatness}</td>
+        <td>${esc(g.guess)} (${Math.round(g.guess_score * 100)}%)</td></tr>`).join("")}
+    </table></div>
+    <p class="hint" style="text-align:left">Tonality: 0 = pure whistle, 1 = noise. The rule-based guess only knows a small list of species; the final answer uses BirdNET.</p>
+  </details></div>` : ""}
+
+  <div class="card"><details><summary>Full analysis graph (waveform, spectrogram, spectrum)</summary>
+    <a href="${d.files.plot}" target="_blank"><img class="plot-img" src="${d.files.plot}?t=${Date.now()}" alt="Analysis graph"></a>
+  </details></div>
+
+  <div class="card"><h2>Downloads</h2><div class="downloads">
+    <a href="${d.files.audio}" download>⬇ Recording (.wav)</a>
+    <a href="${d.files.csv_frames}" download>⬇ Time → frequency (.csv)</a>
+    <a href="${d.files.csv_events}" download>⬇ Sounds table (.csv)</a>
+    <a href="${d.files.plot}" download>⬇ Graph (.png)</a>
+  </div></div>`;
+  $("#results").innerHTML = html;
+  drawChart(d, colorOf);
+}
+
+/* ---------- interactive pitch chart ---------- */
+function drawChart(d, colorOf) {
+  const wrap = $("#chartWrap");
+  const W = 760, H = 280, m = { l: 44, r: 12, t: 10, b: 30 };
+  const maxF = Math.max(4000, ...d.contours.flatMap(c => c.points.map(p => p[1]))) * 1.08;
+  const yMax = Math.min(12000, Math.ceil(maxF / 2000) * 2000);
+  const x = t => m.l + (t / d.duration) * (W - m.l - m.r);
+  const y = f => H - m.b - (f / yMax) * (H - m.t - m.b);
+  let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Pitch of each sound over time">`;
+  for (let f = 0; f <= yMax; f += 2000) {
+    svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(f)}" y2="${y(f)}" stroke="${css("--grid")}" stroke-width="1"/>
+            <text x="${m.l - 8}" y="${y(f) + 4}" text-anchor="end">${f / 1000}k</text>`;
+  }
+  const tStep = d.duration > 20 ? 5 : d.duration > 8 ? 2 : 1;
+  for (let t = 0; t <= d.duration; t += tStep) svg += `<text x="${x(t)}" y="${H - 10}" text-anchor="middle">${t}s</text>`;
+  const pts = [];
+  // non-bird first so bird lines sit on top
+  [...d.contours].sort((a, b) => (!!a.source) - (!!b.source)).forEach(c => {
+    const col = c.source ? colorOf[c.source] : css("--nonbird");
+    const p = c.points.map(q => `${x(q[0]).toFixed(1)},${y(q[1]).toFixed(1)}`).join(" ");
+    svg += `<polyline points="${p}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round" ${c.source ? "" : 'stroke-dasharray="3 3" opacity=".8"'}/>`;
+    c.points.forEach(q => pts.push({ px: x(q[0]), py: y(q[1]), t: q[0], f: q[1], c, col }));
+  });
+  svg += `<circle id="hoverDot" r="5" fill="none" stroke-width="2" opacity="0"/>
+          <rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="hit"/></svg>
+          <div class="tooltip" id="tip"></div>`;
+  wrap.innerHTML = svg;
+  if (!pts.length) { wrap.insertAdjacentHTML("beforeend", `<p class="empty">No sounds detected.</p>`); return; }
+  const svgEl = wrap.querySelector("svg"), dot = wrap.querySelector("#hoverDot"), tip = wrap.querySelector("#tip");
+  svgEl.addEventListener("pointermove", e => {
+    const r = svgEl.getBoundingClientRect(), sx = (e.clientX - r.left) * W / r.width, sy = (e.clientY - r.top) * H / r.height;
+    let best = null, bd = 1e9;
+    for (const p of pts) { const dd = (p.px - sx) ** 2 + (p.py - sy) ** 2; if (dd < bd) { bd = dd; best = p; } }
+    if (!best || bd > 900) { dot.setAttribute("opacity", 0); tip.style.opacity = 0; return; }
+    dot.setAttribute("cx", best.px); dot.setAttribute("cy", best.py); dot.setAttribute("stroke", best.col); dot.setAttribute("opacity", 1);
+    tip.innerHTML = `<strong>${esc(best.c.source ? best.c.source.replace("Bird", "Sound group") : best.c.label)}</strong><br>${best.t.toFixed(2)} s · ${Math.round(best.f).toLocaleString()} Hz<br>
+                     sound #${best.c.id}, ${esc(best.c.shape)} pitch`;
+    tip.style.left = (best.px * r.width / W) + "px"; tip.style.top = (best.py * r.height / H) + "px"; tip.style.opacity = 1;
+  });
+  svgEl.addEventListener("pointerleave", () => { dot.setAttribute("opacity", 0); tip.style.opacity = 0; });
+}
+</script>
+</body>
+</html>
