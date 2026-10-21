@@ -45,6 +45,7 @@ import bird_sound_analyzer as bsa
 HOSTED = os.environ.get("BIRD_HOSTED") == "1"
 PORT = int(os.environ.get("PORT", 5050))
 KEEP_FILES_HOURS = 1  # when hosted, visitors' recordings are deleted after this long
+MAX_HOSTED_SECONDS = 30  # free servers have little memory: longer uploads are trimmed
 WEB_DIR = os.path.join(HERE, "web")
 app = Flask(__name__, static_folder=None)
 analysis_lock = threading.Lock()  # one analysis at a time
@@ -130,7 +131,7 @@ def files(kind, filename):
 @app.get("/api/status")
 def status():
     return jsonify(birdnet_species=len(bsa.birdnet_species()),
-                   birdnet_ready=bsa._BIRDNET_ANALYZER is not None, hosted=HOSTED)
+                   birdnet_ready=bsa._BIRDNET is not None, hosted=HOSTED)
 
 
 @app.get("/api/species")
@@ -170,10 +171,18 @@ def analyze():
         except (KeyError, ValueError):
             return None
 
+    note = None
+    if HOSTED and len(audio) > MAX_HOSTED_SECONDS * sr:
+        audio = audio[:MAX_HOSTED_SECONDS * sr]
+        bsa.save_wav(path, audio, sr)
+        note = f"Only the first {MAX_HOSTED_SECONDS} seconds were analysed."
+
     lat, lon = coord("lat"), coord("lon")
     with analysis_lock:
         res = bsa.analyze(audio, sr, path, show=False, lat=lat, lon=lon)
-    return jsonify(build_response(res))
+    out = build_response(res)
+    out["note"] = note
+    return jsonify(out)
 
 
 def delete_old_files():
@@ -193,11 +202,8 @@ def delete_old_files():
 def warm_up_birdnet():
     """Load BirdNET's model in the background so the first analysis is quick."""
     try:
-        with bsa.silence_everything():
-            from birdnetlib.analyzer import Analyzer
-            with analysis_lock:
-                if bsa._BIRDNET_ANALYZER is None:
-                    bsa._BIRDNET_ANALYZER = Analyzer()
+        with analysis_lock:
+            bsa.load_birdnet()
     except Exception:
         pass
 

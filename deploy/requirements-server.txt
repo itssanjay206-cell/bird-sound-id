@@ -1,0 +1,7 @@
+numpy
+scipy
+matplotlib
+flask
+gunicorn
+birdnetlib
+ai-edge-litert

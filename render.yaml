@@ -1,0 +1,10 @@
+# Render Blueprint: free web service built from deploy/Dockerfile
+services:
+  - type: web
+    name: bird-sound-id
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/status
+    autoDeploy: true

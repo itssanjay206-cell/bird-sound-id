@@ -7,11 +7,14 @@ Record a sound (laptop mic or audio file) and find out:
 - **The data behind it:** frequency-over-time graphs, a spectrogram, and CSV files with
   time → frequency data and measurements for every sound.
 
-There are two ways to use it: a **website** that runs on your own laptop, or a **Terminal menu**.
+**Try it online:** see the website link at the top of this page (hosted free on Render; the first
+visit after a quiet period takes about a minute to wake up).
+
+You can also run it on your own laptop, as a **website** or a **Terminal menu**.
 
 ---
 
-## 1. Setup (once, ~5–10 minutes, ~2 GB download)
+## 1. Setup (once, a few minutes, ~300 MB download)
 
 You need **Python 3.10 or newer** ([python.org/downloads](https://www.python.org/downloads/)).
 
@@ -63,7 +66,8 @@ Add `--details` to see every step, and `--lat 17.4 --lon 78.5` for your location
    (whistle vs noise), length and pitch change. Voices, claps and hums are recognised.
 4. **Measurements:** peak frequency → duration → bandwidth → pitch shape → calls per second →
    tonality. A rule-based method narrows a small built-in species list one parameter at a time.
-5. **BirdNET** (Cornell Lab of Ornithology) gives the final species answer.
+5. **BirdNET** (Cornell Lab of Ornithology) gives the final species answer. Its model runs through a
+   small TFLite interpreter (`ai-edge-litert`), so no full TensorFlow install is needed.
 6. **Outputs** are saved in `recordings/` (audio) and `results/` (graph PNG + 2 CSV files).
 
 | File | What it is |
@@ -72,6 +76,7 @@ Add `--details` to see every step, and `--lat 17.4 --lon 78.5` for your location
 | `web_app.py` | Local web server connecting the page to the analyzer |
 | `web/index.html` | The website |
 | `requirements.txt` | Python libraries |
+| `deploy/`, `render.yaml` | Server setup for hosting the website (Render) |
 | `species_db_custom.json` | Species you taught it with `learn` (created when used) |
 
 ## Tips for good results
@@ -84,4 +89,12 @@ Add `--details` to see every step, and `--lat 17.4 --lon 78.5` for your location
   On Mac also check System Settings → Privacy & Security → Microphone.
 - **"Server not reachable":** the Terminal window running `web_app.py` was closed. Start it again.
 - **Port 5050 in use:** another copy is already running. Use that one, or close it.
-- **Setup fails installing tensorflow:** use Python 3.11 or 3.12.
+- **Setup fails installing ai-edge-litert:** use Python 3.10–3.13 from python.org.
+
+## Hosting your own copy (free)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/itssanjay206-cell/bird-sound-id)
+
+Sign in to Render with GitHub, click the button, then **Apply**. Render builds `deploy/Dockerfile`
+and gives you a link like `https://bird-sound-id.onrender.com`. On the free plan, uploads are
+trimmed to 30 seconds and visitors' recordings are deleted after an hour.

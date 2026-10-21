@@ -13,8 +13,8 @@ Record bird sounds from the laptop mic (or load a .wav file), then:
   5. Plot waveform, spectrogram, frequency-vs-time and the spectrum.
   6. Save the time -> frequency data to CSV.
 
-Optional: if `birdnetlib` is installed, BirdNET (a trained neural network for
-~6000 species) is also run for a second opinion.
+BirdNET (a trained neural network for ~6,500 species) gives the final species answer
+when `birdnetlib` (its model files) and a TFLite interpreter are installed.
 
 Usage
 -----
@@ -27,7 +27,7 @@ Usage
     python bird_sound_analyzer.py list                  # show species database
 
 Install:  pip install numpy scipy matplotlib sounddevice
-Optional: pip install birdnetlib   (needs a Python version TensorFlow supports)
+BirdNET:  pip install birdnetlib ai-edge-litert
 """
 
 import argparse
@@ -52,6 +52,7 @@ if os.path.exists(_py) and os.path.realpath(sys.prefix) != os.path.realpath(_VEN
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # hide TensorFlow chatter
 warnings.filterwarnings("ignore")
+
 
 import numpy as np
 from scipy import ndimage, signal
@@ -180,11 +181,22 @@ def load_audio(path):
 def compute_spectrogram(audio, sr):
     # High-pass to drop mains hum / handling rumble before analysis
     sos = signal.butter(4, FMIN, btype="highpass", fs=sr, output="sos")
-    audio = signal.sosfiltfilt(sos, audio)
-    f, t, Z = signal.stft(audio, fs=sr, nperseg=NFFT, noverlap=NFFT - HOP, boundary=None)
-    S = np.abs(Z) ** 2
+    audio = signal.sosfiltfilt(sos, audio).astype(np.float32)
+    # Short-time FFT (same result as scipy.signal.stft with a Hann window), done in
+    # batches in 32-bit so long recordings don't need several full-size copies in memory.
+    pad = (-(len(audio) - NFFT) % HOP) % NFFT
+    audio = np.pad(audio, (0, pad)) if len(audio) >= NFFT else np.pad(audio, (0, NFFT - len(audio)))
+    frames = np.lib.stride_tricks.sliding_window_view(audio, NFFT)[::HOP]
+    window = signal.get_window("hann", NFFT).astype(np.float32)
+    f = np.fft.rfftfreq(NFFT, 1 / sr)
     band = (f >= FMIN) & (f <= min(FMAX, sr / 2))
-    return f[band], t, S[band]
+    S = np.empty((band.sum(), len(frames)), dtype=np.float32)
+    scale = 1.0 / window.sum()
+    for i in range(0, len(frames), 512):
+        spec = np.fft.rfft(frames[i:i + 512] * window, axis=1)[:, band] * scale
+        S[:, i:i + 512] = (spec.real ** 2 + spec.imag ** 2).T
+    t = (NFFT / 2 + np.arange(len(frames)) * HOP) / sr
+    return f[band], t, S
 
 
 def detect_events(f, t, S):
@@ -555,35 +567,137 @@ def silence_everything():
             os.close(fd)
 
 
-_BIRDNET_ANALYZER = None
+# BirdNET (Cornell Lab of Ornithology) is run directly from its model files, which come
+# with the `birdnetlib` package. Doing it ourselves needs only numpy/scipy plus a small
+# TFLite interpreter, so it is fast and fits on small free servers.
+BIRDNET_SR = 48000          # the model expects 48 kHz audio
+BIRDNET_CHUNK_SEC = 3.0     # ...in 3-second pieces
+BIRDNET_LOCATION_THRESHOLD = 0.03  # species rarer than this at your place/time are dropped
+_BIRDNET = None             # loaded model, reused between analyses
 
 
-def run_birdnet(path, lat=None, lon=None, details=False):
+def birdnet_files():
+    """Paths of BirdNET's model, location model and labels (without importing birdnetlib)."""
+    import importlib.util
+    spec = importlib.util.find_spec("birdnetlib")
+    if spec is None or not spec.submodule_search_locations:
+        return None
+    root = os.path.join(list(spec.submodule_search_locations)[0], "models", "analyzer")
+    files = dict(model=os.path.join(root, "BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite"),
+                 meta=os.path.join(root, "BirdNET_GLOBAL_6K_V2.4_MData_Model_V2_FP16.tflite"),
+                 labels=os.path.join(root, "BirdNET_GLOBAL_6K_V2.4_Labels.txt"))
+    return files if all(os.path.exists(f) for f in files.values()) else None
+
+
+def _tflite_interpreter():
+    """Use whichever TFLite interpreter is installed (light ones first).
+    Returns (Interpreter class, extra options). The options switch off the XNNPACK
+    speed-up, which keeps a second copy of the weights (~45 MB) for little gain here."""
     try:
-        with silence_everything():
-            from birdnetlib import Recording
-            from birdnetlib.analyzer import Analyzer
+        from ai_edge_litert.interpreter import Interpreter, OpResolverType
+        return Interpreter, dict(
+            experimental_op_resolver_type=OpResolverType.BUILTIN_WITHOUT_DEFAULT_DELEGATES)
     except ImportError:
+        pass
+    try:
+        from tflite_runtime.interpreter import Interpreter
+        return Interpreter, {}
+    except ImportError:
+        pass
+    with silence_everything():
+        from tensorflow.lite import Interpreter  # full TensorFlow (heavy)
+    return Interpreter, {}
+
+
+def load_birdnet():
+    """Load BirdNET once. Returns None if it isn't installed."""
+    global _BIRDNET
+    if _BIRDNET is not None:
+        return _BIRDNET
+    files = birdnet_files()
+    if files is None:
+        return None
+    try:
+        Interpreter, opts = _tflite_interpreter()
+    except ImportError:
+        return None
+    with silence_everything():
+        model = Interpreter(model_path=files["model"], num_threads=2, **opts)
+        model.allocate_tensors()
+    with open(files["labels"]) as fh:
+        labels = [line.strip() for line in fh if line.strip()]
+    _BIRDNET = dict(model=model, labels=labels, files=files, Interpreter=Interpreter, opts=opts,
+                    model_in=model.get_input_details()[0]["index"],
+                    model_out=model.get_output_details()[0]["index"], meta=None)
+    return _BIRDNET
+
+
+def _birdnet_local_species(bn, lat, lon, when):
+    """Species BirdNET expects at this place and time of year (its location model)."""
+    import calendar
+    import math
+    day = when.timetuple().tm_yday
+    week_48 = max(1, min(48, math.ceil(day / (366 if calendar.isleap(when.year) else 365) * 48)))
+    if bn["meta"] is None:  # the location model is only loaded when a location is used
+        with silence_everything():
+            meta = bn["Interpreter"](model_path=bn["files"]["meta"], **bn["opts"])
+            meta.allocate_tensors()
+        bn.update(meta=meta, meta_in=meta.get_input_details()[0]["index"],
+                  meta_out=meta.get_output_details()[0]["index"])
+    bn["meta"].set_tensor(bn["meta_in"], np.array([[lat, lon, week_48]], dtype="float32"))
+    bn["meta"].invoke()
+    scores = bn["meta"].get_tensor(bn["meta_out"])[0]
+    return {label for label, sc in zip(bn["labels"], scores) if sc >= BIRDNET_LOCATION_THRESHOLD}
+
+
+def run_birdnet(path, lat=None, lon=None, details=False, audio=None, sr=None):
+    """Return BirdNET detections (list of dicts), or None if BirdNET isn't installed."""
+    bn = load_birdnet()
+    if bn is None:
         print("\n(BirdNET is not available - using the rule-based method only.)")
         return None
     print("Identifying species with BirdNET...")
-    kwargs = dict(min_conf=BIRDNET_MIN_CONF)
+    if audio is None:
+        audio, sr = load_audio(path)
+    if sr != BIRDNET_SR:
+        from math import gcd
+        g = gcd(int(sr), BIRDNET_SR)
+        audio = signal.resample_poly(audio, BIRDNET_SR // g, int(sr) // g).astype(np.float32)
+
+    allowed = None
     if lat is not None and lon is not None:
-        kwargs.update(lat=lat, lon=lon, date=dt.datetime.now())
-    with silence_everything():
-        global _BIRDNET_ANALYZER
-        if _BIRDNET_ANALYZER is None:
-            _BIRDNET_ANALYZER = Analyzer()
-        rec = Recording(_BIRDNET_ANALYZER, path, **kwargs)
-        rec.analyze()
+        allowed = _birdnet_local_species(bn, lat, lon, dt.datetime.now())
+
+    n = int(BIRDNET_CHUNK_SEC * BIRDNET_SR)
+    detections = []
+    for i in range(0, len(audio), n):
+        chunk = audio[i:i + n]
+        if len(chunk) < n // 2:  # BirdNET skips pieces shorter than 1.5 s
+            break
+        if len(chunk) < n:
+            chunk = np.pad(chunk, (0, n - len(chunk)))
+        bn["model"].set_tensor(bn["model_in"], chunk[np.newaxis, :].astype(np.float32))
+        bn["model"].invoke()
+        logits = bn["model"].get_tensor(bn["model_out"])[0]
+        probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -15, 15)))
+        start = i / BIRDNET_SR
+        for k in np.where(probs >= BIRDNET_MIN_CONF)[0]:
+            sci, com = bn["labels"][k].split("_", 1)
+            if allowed is not None and sci != com and bn["labels"][k] not in allowed:
+                continue  # not expected at this location (non-bird labels are always kept)
+            detections.append(dict(common_name=com, scientific_name=sci, label=bn["labels"][k],
+                                   confidence=float(probs[k]), start_time=start,
+                                   end_time=start + BIRDNET_CHUNK_SEC))
+    detections.sort(key=lambda d: (d["start_time"], -d["confidence"]))
+
     if details:
         print("\nBirdNET detections:")
-        if not rec.detections:
+        if not detections:
             print(f"  none above {BIRDNET_MIN_CONF * 100:.0f} % confidence")
-        for d in rec.detections:
+        for d in detections:
             print(f"  {d['start_time']:5.1f}-{d['end_time']:5.1f} s  {d['common_name']:<28} "
                   f"({d['confidence'] * 100:.0f} %)")
-    return rec.detections
+    return detections
 
 
 # ----------------------------------------------------------------------------
@@ -607,8 +721,13 @@ def plot_results(audio, sr, f, t, S_db, events, sources, title, save_path, show=
 
     # 1. Waveform
     ax0 = fig.add_subplot(gs[0, 0])
-    tt = np.arange(len(audio)) / sr
-    ax0.plot(tt, audio, color="#5a5a55", linewidth=0.5)
+    # min/max outline per small block: looks the same as plotting every sample, far lighter
+    block = max(1, len(audio) // 3000)
+    n_blocks = len(audio) // block
+    blocks = audio[:n_blocks * block].reshape(n_blocks, block)
+    tt = (np.arange(n_blocks) * block + block / 2) / sr
+    ax0.fill_between(tt, blocks.min(axis=1), blocks.max(axis=1), color="#5a5a55", linewidth=0.5)
+    tt = np.array([0, len(audio) / sr])
     ax0.set_ylabel("Amplitude")
     ax0.set_title("Waveform", loc="left")
     ax0.set_xlim(0, tt[-1] if len(tt) else 1)
@@ -616,7 +735,15 @@ def plot_results(audio, sr, f, t, S_db, events, sources, title, save_path, show=
     # 2. Spectrogram with event boxes
     ax1 = fig.add_subplot(gs[1, 0], sharex=ax0)
     vmax = np.percentile(S_db, 99.8)
-    ax1.pcolormesh(t, f / 1000, S_db, shading="auto", cmap="magma", vmin=vmax - 70, vmax=vmax)
+    # imshow draws the spectrogram as one image (much lighter than one shape per cell).
+    # Long clips are reduced to ~1500 columns first (keeping the loudest value), which
+    # is more than the picture's pixel width anyway.
+    step = max(1, S_db.shape[1] // 1500)
+    S_show = S_db if step == 1 else S_db[:, :S_db.shape[1] // step * step].reshape(
+        S_db.shape[0], -1, step).max(axis=2)
+    ax1.imshow(S_show, origin="lower", aspect="auto", cmap="magma", vmin=vmax - 70, vmax=vmax,
+               extent=[t[0], t[-1] if len(t) > 1 else 1, f[0] / 1000, f[-1] / 1000],
+               interpolation="nearest")
     for e in events:
         fs_, ts_ = e["box"]
         c = color_of.get(e["source"], NOT_BIRD)
@@ -674,7 +801,7 @@ def plot_results(audio, sr, f, t, S_db, events, sources, title, save_path, show=
         lines.append(f"{n_not} non-bird sound(s)")
     ax5.text(0, 1, "\n".join(lines) or "No sounds detected", va="top", fontsize=9)
 
-    fig.savefig(save_path, dpi=130)
+    fig.savefig(save_path, dpi=90 if os.environ.get("BIRD_HOSTED") == "1" else 110)
     print(f"Saved plot: {save_path}")
     if show:
         plt.show()
@@ -858,7 +985,7 @@ def analyze(audio, sr, path=None, show=True, birdnet=True, lat=None, lon=None, d
         if details:
             print("    Ranked guesses: " + "; ".join(f"{sp} ({sc * 100:.0f}% match)" for sp, sc in top))
 
-    birdnet_hits = run_birdnet(path, lat, lon, details) if (birdnet and path) else None
+    birdnet_hits = run_birdnet(path, lat, lon, details, audio=audio, sr=sr) if birdnet else None
 
     os.makedirs(OUT_DIR, exist_ok=True)
     name = os.path.splitext(os.path.basename(path))[0] if path else f"clip_{dt.datetime.now():%Y%m%d_%H%M%S}"
@@ -957,20 +1084,13 @@ def open_graph(png):
 
 
 def birdnet_species():
-    """All species names BirdNET can recognise (read from its installed label file)."""
-    try:
-        with silence_everything():
-            import birdnetlib
-    except ImportError:
+    """All bird species BirdNET can recognise (read from its label file)."""
+    files = birdnet_files()
+    if files is None:
         return []
-    root = os.path.dirname(birdnetlib.__file__)
-    for dirpath, _, files in os.walk(root):
-        for fn in files:
-            if fn.endswith("_Labels.txt") and "GLOBAL" in fn:
-                with open(os.path.join(dirpath, fn)) as fh:
-                    rows = [line.strip().split("_", 1) for line in fh if "_" in line]
-                return [(sci, com) for sci, com in rows if sci != com]
-    return []
+    with open(files["labels"]) as fh:
+        rows = [line.strip().split("_", 1) for line in fh if "_" in line]
+    return [(sci, com) for sci, com in rows if sci != com]
 
 
 def search_species(term=""):

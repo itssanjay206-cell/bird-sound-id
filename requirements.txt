@@ -3,10 +3,6 @@ scipy
 matplotlib
 sounddevice
 flask
-# BirdNET (neural-network species ID)
+# BirdNET (neural-network species ID): model files + a small TFLite interpreter
 birdnetlib
-tensorflow
-librosa
-resampy
-audioread
-audioop-lts; python_version >= "3.13"
+ai-edge-litert

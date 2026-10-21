@@ -521,6 +521,7 @@ function renderResult(d) {
   else if (isBirdNet) note = `Identified by BirdNET` + (top.times.length ? ` · heard at ${top.times.map(t => `${t[0]}–${t[1]} s`).join(", ")}` : "");
   else note = esc(d.answer_source);
   if (d.confidence != null && d.confidence < 0.5) note += " · Low confidence: record again closer to the bird.";
+  if (d.note) note += " · " + esc(d.note);
 
   const rest = d.species.slice(isBirdNet ? 1 : 0);
   const others = rest.filter(s => s.confidence >= 0.10);   // hide very weak guesses
