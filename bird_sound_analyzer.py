@@ -58,8 +58,9 @@ from scipy import ndimage, signal
 from scipy.io import wavfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REC_DIR = os.path.join(HERE, "recordings")
-OUT_DIR = os.path.join(HERE, "results")
+DATA_DIR = os.environ.get("BIRD_DATA_DIR", HERE)  # where recordings/results are written
+REC_DIR = os.path.join(DATA_DIR, "recordings")
+OUT_DIR = os.path.join(DATA_DIR, "results")
 CUSTOM_DB = os.path.join(HERE, "species_db_custom.json")
 
 # ----------------------------------------------------------------------------

@@ -1,0 +1,11 @@
+numpy
+scipy
+matplotlib
+flask
+gunicorn
+birdnetlib
+tensorflow-cpu
+librosa
+resampy
+audioread
+soundfile

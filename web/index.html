@@ -260,6 +260,12 @@ details[open] summary { margin-bottom: 12px; }
   </section>
 </main>
 
+<footer style="text-align:center;color:var(--muted);font-size:13px;padding:8px 16px 28px">
+  Species identification by <a href="https://birdnet.cornell.edu/" target="_blank" rel="noopener" style="color:inherit">BirdNET</a> (Cornell Lab of Ornithology)
+  · <a href="https://github.com/itssanjay206-cell/bird-sound-id" target="_blank" rel="noopener" style="color:inherit">Source code on GitHub</a>
+  <span id="hostedNote"></span>
+</footer>
+
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
@@ -287,6 +293,7 @@ async function loadStatus() {
     $("#statusText").textContent = r.birdnet_species
       ? `BirdNET · ${r.birdnet_species.toLocaleString()} species`
       : "BirdNET not available – basic mode";
+    if (r.hosted) $("#hostedNote").textContent = " · Recordings are analysed on the server and deleted after 1 hour.";
   } catch (e) {
     $("#statusText").textContent = "Server not reachable – is web_app.py running?";
   }

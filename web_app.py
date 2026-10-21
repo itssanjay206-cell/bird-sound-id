@@ -28,6 +28,8 @@ if os.path.exists(_py) and os.path.realpath(sys.prefix) != os.path.realpath(_VEN
 
 import datetime as dt
 import threading
+import time
+import uuid
 import webbrowser
 
 import matplotlib
@@ -38,7 +40,11 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 
 import bird_sound_analyzer as bsa
 
-PORT = 5050  # 5000 is used by AirPlay on macOS
+# Locally: 127.0.0.1:5050 (5000 is used by AirPlay on macOS).
+# Hosted (e.g. Hugging Face Spaces): set BIRD_HOSTED=1 and PORT.
+HOSTED = os.environ.get("BIRD_HOSTED") == "1"
+PORT = int(os.environ.get("PORT", 5050))
+KEEP_FILES_HOURS = 1  # when hosted, visitors' recordings are deleted after this long
 WEB_DIR = os.path.join(HERE, "web")
 app = Flask(__name__, static_folder=None)
 analysis_lock = threading.Lock()  # one analysis at a time
@@ -124,7 +130,7 @@ def files(kind, filename):
 @app.get("/api/status")
 def status():
     return jsonify(birdnet_species=len(bsa.birdnet_species()),
-                   birdnet_ready=bsa._BIRDNET_ANALYZER is not None)
+                   birdnet_ready=bsa._BIRDNET_ANALYZER is not None, hosted=HOSTED)
 
 
 @app.get("/api/species")
@@ -141,7 +147,10 @@ def analyze():
     if upload is None:
         return jsonify(error="No audio received."), 400
     os.makedirs(bsa.REC_DIR, exist_ok=True)
-    name = f"web_{dt.datetime.now():%Y%m%d_%H%M%S_%f}"[:-3]
+    if HOSTED:
+        delete_old_files()
+    # random part so visitors can't guess each other's file names
+    name = f"web_{dt.datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:12]}"
     path = os.path.join(bsa.REC_DIR, name + ".wav")
     upload.save(path)
 
@@ -167,6 +176,20 @@ def analyze():
     return jsonify(build_response(res))
 
 
+def delete_old_files():
+    cutoff = time.time() - KEEP_FILES_HOURS * 3600
+    for folder in (bsa.REC_DIR, bsa.OUT_DIR):
+        if not os.path.isdir(folder):
+            continue
+        for fn in os.listdir(folder):
+            fp = os.path.join(folder, fn)
+            if fn.startswith("web_") and os.path.getmtime(fp) < cutoff:
+                try:
+                    os.remove(fp)
+                except OSError:
+                    pass
+
+
 def warm_up_birdnet():
     """Load BirdNET's model in the background so the first analysis is quick."""
     try:
@@ -179,10 +202,14 @@ def warm_up_birdnet():
         pass
 
 
+if HOSTED:  # under gunicorn, load BirdNET as soon as the server starts
+    threading.Thread(target=warm_up_birdnet, daemon=True).start()
+
 if __name__ == "__main__":
     url = f"http://127.0.0.1:{PORT}"
     print(f"\nBird Sound ID is running at {url}\nPress Ctrl+C to stop.\n")
-    threading.Thread(target=warm_up_birdnet, daemon=True).start()
-    if "--no-browser" not in sys.argv:
+    if not HOSTED:
+        threading.Thread(target=warm_up_birdnet, daemon=True).start()
+    if "--no-browser" not in sys.argv and not HOSTED:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)
+    app.run(host="0.0.0.0" if HOSTED else "127.0.0.1", port=PORT, debug=False, threaded=True)
